@@ -15,12 +15,13 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(url: "https://github.com/nalexn/ViewInspector", exact: "0.9.11")
+        .package(url: "https://github.com/nalexn/ViewInspector", exact: "0.9.11"),
+        .package(url: "https://github.com/getsentry/sentry-cocoa", from: "8.0.0")
     ],
     targets: [
         .target(
             name: "Nativebrik",
-            dependencies: ["Yoga", "YogaKit"],
+            dependencies: ["Yoga", "YogaKit", .product(name: "Sentry", package: "sentry-cocoa")],
             exclude: ["PrivacyInfo.xcprivacy"],
             resources: [
                 .copy("PrivacyInfo.xcprivacy")

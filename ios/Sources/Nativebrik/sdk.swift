@@ -8,6 +8,7 @@
 import Foundation
 import SwiftUI
 import Combine
+import Sentry
 
 // for development
 public var nativebrikTrackUrl = "https://track.nativebrik.com/track/v1"
@@ -55,6 +56,7 @@ class Config {
     var url: String = "https://nativebrik.com/client"
     var trackUrl: String = nativebrikTrackUrl
     var cdnUrl: String = nativebrikCdnUrl
+    var sentryDsn: String = "https://d7e4268deba1d00eb3bf5f923582e1aa@o108042.ingest.us.sentry.io/4510105710166016"
     var eventListeners: [((_ event: ComponentEvent) -> Void)] = []
     var cachePolicy: NativebrikCachePolicy = NativebrikCachePolicy()
 
@@ -122,6 +124,7 @@ public class NativebrikClient: ObservableObject {
     private let container: Container
     private let config: Config
     private let overlayVC: OverlayViewController
+    private let sentryHub: SentryHub
     public final let experiment: NativebrikExperiment
     public final let user: NativebrikUser
 
@@ -149,7 +152,20 @@ public class NativebrikClient: ObservableObject {
             intercepter: httpRequestInterceptor
         )
         self.overlayVC = OverlayViewController(user: self.user, container: self.container, onDispatch: onDispatch)
-        self.experiment = NativebrikExperiment(container: self.container, overlay: self.overlayVC)
+
+        let options = Options()
+        options.dsn = config.sentryDsn
+        options.enableAutoSessionTracking = false
+        options.releaseName = "nativebrik-ios@\(nativebrikSdkVersion)"
+        options.attachStacktrace = true
+
+        let client = SentryClient(options: options)
+        self.sentryHub = SentryHub(client: client, andScope: nil)
+        self.sentryHub.configureScope { scope in
+            scope.setTag(value: projectId, key: "project_id")
+        }
+
+        self.experiment = NativebrikExperiment(container: self.container, overlay: self.overlayVC, sentryHub: self.sentryHub)
 
         config.addEventListner(createDispatchNativebrikEvent(self))
     }
@@ -158,10 +174,12 @@ public class NativebrikClient: ObservableObject {
 public class NativebrikExperiment {
     private let container: Container
     private let overlayVC: OverlayViewController
+    private let sentryHub: SentryHub
 
-    fileprivate init(container: Container, overlay: OverlayViewController) {
+    fileprivate init(container: Container, overlay: OverlayViewController, sentryHub: SentryHub) {
         self.container = container
         self.overlayVC = overlay
+        self.sentryHub = sentryHub
     }
 
     public func dispatch(_ event: NativebrikEvent) {
@@ -174,6 +192,11 @@ public class NativebrikExperiment {
     public func record(exception: NSException) {
         if !isNativebrikAvailable {
             return
+        }
+        let causedByNativebrik = isCausedByNativebrik(callStacks: exception.callStackSymbols, reason: exception.reason)
+
+        if causedByNativebrik {
+            self.sentryHub.capture(exception: exception)
         }
         self.container.record(exception)
     }

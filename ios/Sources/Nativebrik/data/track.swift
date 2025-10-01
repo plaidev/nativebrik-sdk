@@ -15,6 +15,16 @@ struct CrashRecord: Codable {
     var callStacks: [String]?
 }
 
+func isCausedByNativebrik(callStacks: [String]?, reason: String?) -> Bool {
+    let callStackMatch = callStacks?.contains(where: { callStack in
+        return callStack.contains("Nativebrik") || callStack.contains("package:nativebrik_bridge/")
+    }) ?? false
+
+    let reasonMatch = reason?.contains("Nativebrik") ?? false
+
+    return callStackMatch || reasonMatch
+}
+
 protocol TrackRepository2 {
     func trackExperimentEvent(_ event: TrackExperimentEvent)
     func trackEvent(_ event: TrackUserEvent)
@@ -178,13 +188,7 @@ class TrackRespositoryImpl: TrackRepository2 {
         do {
             self.user.userDB.removeObject(forKey: CRASH_RECORD_KEY)
             let crashRecord = try JSONDecoder().decode(CrashRecord.self, from: data)
-            // potentially caused by nativebrik sdk.
-            let causedByNativebrik = (
-                crashRecord.callStacks?.contains(where: { callStack in
-                    return callStack.contains("Nativebrik") || callStack.contains("package:nativebrik_bridge/") // support error from flutter
-                }) ?? false
-            )
-            || (crashRecord.reason?.contains("Nativebrik") ?? false)
+            let causedByNativebrik = isCausedByNativebrik(callStacks: crashRecord.callStacks, reason: crashRecord.reason)
             self.buffer.append(TrackEvent(
                 typename: .Event,
                 name: TriggerEventNameDefs.N_ERROR_RECORD.rawValue,
